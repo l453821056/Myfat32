@@ -61,6 +61,13 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClInclude Include="FS_backend.h" />
+    <ClInclude Include="FS_frontend.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="FS_backend.cpp" />
+    <ClCompile Include="FS_frontend.cpp" />
+    <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemDefinitionGroup />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
