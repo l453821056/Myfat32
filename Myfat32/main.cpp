@@ -11,9 +11,9 @@ int main(int argc, char* argv[])
 	else{
 		char *DiskFileName = "fat32.vhd";
 	}
-	FS_intial();
-	Print_MBR();
-	Print_FS_Info();
-	cout << "Input the file you want to read" << endl;
-	Read_Print_File(filename);
+	//FS_intial();
+	//Print_MBR();
+	//Print_FS_Info();
+	//cout << "Input the file you want to read" << endl;
+	//Read_Print_File(filename);
 }

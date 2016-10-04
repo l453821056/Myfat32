@@ -1,12 +1,49 @@
+#define DEBUG
 #ifndef _FS_BACKEND_
 #define _FS_BACKEND_
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
+#include <string.h>
+
 #endif // !_FS_BACKEND_
+#ifdef DEBUG
+#define DBG_PRINTF(...) printf(__VA_ARGS__)
+#else
+#define DBG_PRINTF(...)
+#endif // DEBUG
+
 #define FS_MAX_PATH 255
+#define FS_MASK_EOC 0x0FFFFFFF 
 #define SECTOR_SIZE 512
+#define SECTOR_ALREADY_IN_MEMORY 0x00
+#define NO_ERROR 0x00
+#define ERROR_OPEN_VHD 0x01
+#define ERROR_FS_TYPE 0x02
+#define ERROR_SECTOR_SIZE 0x04
+#define ERROR_INVALID_SEEK 0x08
+#define ERROR_UNKOWN 0xFFFFFFFF
+#define CURRENT_FLAG_DIRTY 0x01
+
+#define ENRTRY_FLAG_DIRTY 0x01
+#define ENRTRY_FLAG_OPEN 0x02
+#define ENRTRY_FLAG_SIZECHANGED 0x04
+#define ENRTRY_FLAG_ROOT 0x08
+
+#define ENRTRY_MODE_READ 0x01
+#define ENRTRY_MODE_WRITE 0x02
+#define ENRTRY_MODE_APPEND 0x04
+#define ENRTRY_MODE_OVERWRITE 0x08
+
+#define ENRTRY_ATTR_READ_ONLY 0x01
+#define ENRTRY_ATTR_HIDDEN 0x02
+#define ENRTRY_ATTR_SYSTEM 0x04
+#define ENRTRY_ATTR_VOLUME_LABEL 0x08
+#define ENRTRY_ATTR_DIRECTORY 0x10
+#define ENRTRY_ATTR_ARCHIVE 0x20
+#define ENRTRY_ATTR_DEVICE 0x40
+#define ENRTRY_ATTR_UNUSED 0x80
 //Structures
 
 typedef struct struct_MBR_PartitionTable_struct {
@@ -79,8 +116,6 @@ typedef struct struct_DirectoryEntry_struct {
 	uint16_t firstCluster;
 	uint32_t fileSize;
 } DirectoryEntry_struct;
-
-
 typedef struct struct_LongFileName_struct {
 	uint8_t sequence_number;
 	uint16_t name_field_1[5]; 
@@ -91,7 +126,7 @@ typedef struct struct_LongFileName_struct {
 	uint16_t firstCluster;
 	uint16_t name3[2];
 } LongFileName_struct;
-typedef struct struct_FileEntry_struct {
+typedef struct struct_FileInfo_struct {
 	uint32_t ParentStartCluster;
 	uint32_t StartCluster;
 	uint32_t CurrentClusterIdx;
@@ -104,38 +139,55 @@ typedef struct struct_FileEntry_struct {
 	uint8_t mode;
 	uint32_t size;
 	uint8_t filename[FS_MAX_PATH];
-} FileEntry;
-
+} FileInfo;
 typedef struct struct_FS_Info_struct {
 	uint8_t SectorsPerCluster;
 	uint32_t ReservedSectors;
 	uint32_t DataStartSector;
+	uint32_t DataSectors;
+	uint32_t DataClusters;
 	uint32_t TotalSectors;
+	uint32_t FatSize;
+	uint32_t RootDirSectors;
 } FS_Info_struct;
-
 typedef struct struct_CurrentData_struct {
 	uint32_t CurrentSector;
 	uint8_t SectorFlags;
 	uint8_t buffer[512];
 } CurrentData_struct;
+typedef struct struct_PWD_struct {
+	char DirectoryName[FS_MAX_PATH];
+	uint32_t cluster;
+};
 //Structures end
 
 //Low Level Functions
 int read_sector(const char *DiskFileName, uint8_t * buffer, uint32_t sector);
+int write_sector(const char *DiskFileName, uint8_t *buffer, uint32_t sector);
 int MBR_read(uint8_t *buffer);
+int BPB_read(uint8_t *buffer);
 int FS_read_sector(uint8_t * buffer, uint32_t sector);//Read a sector from the beginning of FS
 int FS_fetch(uint32_t sector); //Fetch a sector
 int FS_store(); //Write buffer to current sector
 uint32_t FS_get_FAT_entry(uint32_t cluster);//Get FAT entry of specified cluster
-int  FS_set_FAT_entry(uint32_t cluster, uint32_t value);
-
+int FS_set_FAT_entry(uint32_t cluster, uint32_t value);
+int FS_free_clusterchain(uint32_t cluster);
+uint32_t FS_find_free_cluster();
+uint32_t FS_find_free_cluster_from(uint32_t c);
+uint32_t FS_first_sector(uint32_t cluster);
 //High Level Functions
 int FS_intial();
-FileEntry *FS_fopen(uint8_t *filename, const uint8_t *mode);
-int FS_fclose(FileEntry *fp);
-int FS_fread(uint8_t *dest, int size, FileEntry *fp);
+FileInfo *FS_fopen(char *filename, const char *mode);
+int FS_fclose(FileInfo *fp);
+int FS_fread(uint8_t *dest, int size, FileInfo *fp);
+int FS_fseek(FileInfo * fp, uint32_t offset, int origin);
+int FS_compare_filename(FileInfo *fp, uint8_t *name);
+bool FS_compare_filename_segment(DirectoryEntry_struct *entry, uint8_t *name);
+int FILE_read_info(char *filename, FileInfo *fp);
 
 //Golbal Variables
 extern char DiskFileName[FS_MAX_PATH];
 extern struct_CurrentData_struct Current;
 extern struct_MBR_Info_struct MBR_Info;
+extern struct_FS_Info_struct FS_Info;
+extern struct_PWD_struct PWD;
