@@ -46,15 +46,12 @@
 #define ENRTRY_ATTR_UNUSED 0x80
 //Structures
 
+
 typedef struct struct_MBR_PartitionTable_struct {
 	uint8_t MBR_BootIndicator;
-	uint8_t MBR_StartHead;
-	uint8_t MBR_StartSector;
-	uint8_t MBR_StartCylinder;
+	uint8_t MBR_StartHead[3];
 	uint8_t MBR_PartionType;
-	uint8_t MBR_EndHead;
-	uint8_t MBR_EndSector;
-	uint8_t MBR_EndCylinder;
+	uint8_t MBR_EndHead[3];
 	uint32_t MBR_SectorsPreceding;
 	uint32_t MBR_SectorsInPartition;
 } MBR_PartitionTable_struct;

@@ -4,6 +4,7 @@ int FS_Start_Sector;
 struct_MBR_Info_struct MBR_Info;
 struct_FS_Info_struct FS_Info;
 struct_PWD_struct PWD;
+char DiskFileName[]="fat32.vhd";
 int read_sector(const char *DiskFileName,uint8_t * buffer, uint32_t sector)
 {
 	FILE *fp;
@@ -44,9 +45,7 @@ int MBR_read(uint8_t * buffer)
 	MBR_Info.Active = (MBR->MBR_PartitionTable->MBR_BootIndicator) ?1 : 0;
 	MBR_Info.FS_Type = (MBR->MBR_PartitionTable->MBR_PartionType == 0x0c) ? "FAT32" : "UNKNOWN";
 	MBR_Info.ReservedSector = MBR->MBR_PartitionTable->MBR_SectorsPreceding;
-	MBR_Info.StartCylinder = MBR->MBR_PartitionTable->MBR_StartCylinder;
 	MBR_Info.StartHead = MBR->MBR_PartitionTable->MBR_StartHead;
-	MBR_Info.StartSector = MBR->MBR_PartitionTable->MBR_StartSector;
 	FS_Start_Sector = MBR_Info.ReservedSector;
 	return ErrorLevel;
 }
@@ -244,7 +243,7 @@ FileInfo * FS_fopen(char * filename, const char * mode)
 	}
 
 
-	return nullptr;
+	return fp;
 }
 
 int FS_fclose(FileInfo * fp)
