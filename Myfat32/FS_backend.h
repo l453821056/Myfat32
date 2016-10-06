@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string>
 #include <string.h>
-
+#include <list>
 #endif // !_FS_BACKEND_
 #ifdef DEBUG
 #define DBG_PRINTF(...) printf(__VA_ARGS__)
@@ -15,7 +15,7 @@
 #endif // DEBUG
 
 #define FS_MAX_PATH 255
-#define FS_MASK_EOC 0x0FFFFFFF 
+#define FAT_MASK_EOC 0x0FFFFFFF 
 #define SECTOR_SIZE 512
 #define SECTOR_ALREADY_IN_MEMORY 0x00
 #define NO_ERROR 0x00
@@ -23,6 +23,8 @@
 #define ERROR_FS_TYPE 0x02
 #define ERROR_SECTOR_SIZE 0x04
 #define ERROR_INVALID_SEEK 0x08
+#define ERROR_ILLEGAL_PATH 0x0F
+#define ERROR_READ_FAT 0x1F
 #define ERROR_UNKOWN 0xFFFFFFFF
 #define CURRENT_FLAG_DIRTY 0x01
 
@@ -36,14 +38,33 @@
 #define ENRTRY_MODE_APPEND 0x04
 #define ENRTRY_MODE_OVERWRITE 0x08
 
-#define ENRTRY_ATTR_READ_ONLY 0x01
-#define ENRTRY_ATTR_HIDDEN 0x02
-#define ENRTRY_ATTR_SYSTEM 0x04
-#define ENRTRY_ATTR_VOLUME_LABEL 0x08
-#define ENRTRY_ATTR_DIRECTORY 0x10
-#define ENRTRY_ATTR_ARCHIVE 0x20
-#define ENRTRY_ATTR_DEVICE 0x40
-#define ENRTRY_ATTR_UNUSED 0x80
+#define ATTR_READ_ONLY 0x01
+#define ATTR_HIDDEN 0x02
+#define ATTR_SYSTEM 0x04
+#define ATTR_VOLUME_ID 0x08
+#define ATTR_DIRECTORY 0x10
+#define ATTR_ARCHIVE 0x20
+#define ATTR_DEVICE 0x40
+#define ATTR_UNUSED 0x80
+#define ATTR_LONG_NAME (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID)
+#define ATTR_LONG_NAME_MASK (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID | ATTR_DIRECTORY | ATTR_ARCHIVE)
+#define LAST_LONG_ENTRY_MASK 0x40
+#define _IO_SKIPWS 01
+#define _IO_LEFT 02
+#define _IO_RIGHT 04
+#define _IO_INTERNAL 010
+#define _IO_DEC 020
+#define _IO_OCT 040
+#define _IO_HEX 0100
+#define _IO_SHOWBASE 0200
+#define _IO_SHOWPOINT 0400
+#define _IO_UPPERCASE 01000
+#define _IO_SHOWPOS 02000
+#define _IO_SCIENTIFIC 04000
+#define _IO_FIXED 010000
+#define _IO_UNITBUF 020000
+#define _IO_STDIO 040000
+#define _IO_DONT_CLOSE 0100000
 //Structures
 
 
@@ -54,13 +75,13 @@ typedef struct struct_MBR_PartitionTable_struct {
 	uint8_t MBR_EndHead[3];
 	uint32_t MBR_SectorsPreceding;
 	uint32_t MBR_SectorsInPartition;
-} MBR_PartitionTable_struct;
+}__attribute__ ((__packed__)) MBR_PartitionTable_struct;
 
 typedef struct struct_MBR_struct {
 	uint8_t MBR_BootRecord[446];
 	MBR_PartitionTable_struct MBR_PartitionTable[4];
 	uint16_t MBR_Signature;
-};
+}__attribute__ ((__packed__));
 typedef struct struct_MBR_Info_struct {
 	bool Active;
 	int StartCylinder;
@@ -97,32 +118,32 @@ typedef struct struct_BPB_struct {
 	uint32_t    BS_VolumeID;
 	uint8_t     BS_VolumeLabel[11];
 	uint8_t     BS_FileSystemType[8];
-} BPB_struct;
+} __attribute__ ((__packed__))BPB_struct;
 typedef struct struct_DirectoryEntry_struct {
 	uint8_t filename[8];
 	uint8_t extension[3];
 	uint8_t attributes;
 	uint8_t reserved;
-	uint8_t creationTimeMs;
-	uint16_t creationTime;
-	uint16_t creationDate;
-	uint16_t lastAccessTime;
-	uint16_t eaIndex;
-	uint16_t modifiedTime;
-	uint16_t modifiedDate;
-	uint16_t firstCluster;
-	uint32_t fileSize;
-} DirectoryEntry_struct;
+	uint8_t CreationTimeMs;
+	uint16_t CreationTime;
+	uint16_t CreationDate;
+	uint16_t LastAccessTime;
+	uint16_t ClusterLow;
+	uint16_t ModifiedTime;
+	uint16_t ModifiedDate;
+	uint16_t FirstCluster;
+	uint32_t FileSize;
+} __attribute__((__packed__))DirectoryEntry_struct;
 typedef struct struct_LongFileName_struct {
 	uint8_t sequence_number;
-	uint16_t name_field_1[5]; 
+	uint16_t name_1[5]; 
 	uint8_t attributes;
 	uint8_t reserved;
 	uint8_t checksum;
-	uint16_t name2[6];
+	uint16_t name_2[6];
 	uint16_t firstCluster;
-	uint16_t name3[2];
-} LongFileName_struct;
+	uint16_t name_3[2];
+} __attribute__((__packed__))LongFileName_struct;
 typedef struct struct_FileInfo_struct {
 	uint32_t ParentStartCluster;
 	uint32_t StartCluster;
@@ -134,8 +155,10 @@ typedef struct struct_FileInfo_struct {
 	uint8_t flags;
 	uint8_t attributes;
 	uint8_t mode;
-	uint32_t size;
-	uint8_t filename[FS_MAX_PATH];
+	uint32_t FileSize;
+	char filename[16] = "";
+	char LongFilename[255] = "";
+	uint8_t checksum;
 } FileInfo;
 typedef struct struct_FS_Info_struct {
 	uint8_t SectorsPerCluster;
@@ -156,35 +179,43 @@ typedef struct struct_PWD_struct {
 	char DirectoryName[FS_MAX_PATH];
 	uint32_t cluster;
 };
+typedef struct struct_CutedFilename_struct {
+	std::string CutedFilename[255];
+	int used;
+}CutedFilename_struct;
 //Structures end
 
-//Low Level Functions
+//Physics storage interface Functions
 int read_sector(const char *DiskFileName, uint8_t * buffer, uint32_t sector);
 int write_sector(const char *DiskFileName, uint8_t *buffer, uint32_t sector);
+int FS_fetch(uint32_t sector); //Fetch a sector
+
+//internal helper Functions
+int FS_intial();
 int MBR_read(uint8_t *buffer);
 int BPB_read(uint8_t *buffer);
 int FS_read_sector(uint8_t * buffer, uint32_t sector);//Read a sector from the beginning of FS
-int FS_fetch(uint32_t sector); //Fetch a sector
-int FS_store(); //Write buffer to current sector
+int FS_read_entry(uint8_t * buffer, uint32_t sector);
+int FS_compare_filename(FileInfo *fp, uint8_t *name);
+bool FS_compare_filename_raw_entry(DirectoryEntry_struct *entry, uint8_t *name);
 uint32_t FS_get_FAT_entry(uint32_t cluster);//Get FAT entry of specified cluster
 int FS_set_FAT_entry(uint32_t cluster, uint32_t value);
-int FS_free_clusterchain(uint32_t cluster);
-uint32_t FS_find_free_cluster();
-uint32_t FS_find_free_cluster_from(uint32_t c);
-uint32_t FS_first_sector(uint32_t cluster);
-//High Level Functions
-int FS_intial();
+std::list<struct_FileInfo_struct> FS_dir(uint32_t cluster);
+struct_FileInfo_struct *FS_read_one_file_info(DirectoryEntry_struct *CurrentOneFileInfo,uint32_t cluster);
+char *FS_format_file_name(DirectoryEntry_struct *entry);
+FileInfo *FS_find_file(uint32_t cluster, const char* filename);
+uint8_t FS_LongFilename_checksum(const uint8_t *DosName);
+//System IO interface Functions
+int FS_fsync(); //Write buffer to current sector
 FileInfo *FS_fopen(char *filename, const char *mode);
 int FS_fclose(FileInfo *fp);
 int FS_fread(uint8_t *dest, int size, FileInfo *fp);
 int FS_fseek(FileInfo * fp, uint32_t offset, int origin);
-int FS_compare_filename(FileInfo *fp, uint8_t *name);
-bool FS_compare_filename_segment(DirectoryEntry_struct *entry, uint8_t *name);
-int FILE_read_info(char *filename, FileInfo *fp);
-
+int FS_fwrite(uint8_t *src, int size, int count, FileInfo *fp);
 //Golbal Variables
 extern char DiskFileName[FS_MAX_PATH];
 extern struct_CurrentData_struct Current;
 extern struct_MBR_Info_struct MBR_Info;
 extern struct_FS_Info_struct FS_Info;
 extern struct_PWD_struct PWD;
+extern struct_CutedFilename_struct CutedFilename;
